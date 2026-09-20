@@ -1,9 +1,126 @@
-# src/preprocessing.py
-# data-acquisition-auto-dev-api
+# src/data_preprocessing.py
+
 from datetime import datetime
-from data_acquisition import get_listings
+from pathlib import Path
 
 import pandas as pd
+
+from data_acquisition import get_listings
+
+
+def get_data_path():
+    """Return the path to the raw vehicle dataset."""
+
+    return (
+        Path(__file__).resolve().parent.parent
+        / "data"
+        / "raw"
+        / "auto_dev_listings.csv"
+    )
+
+
+def load_data():
+    """
+    Load raw vehicle listings from CSV.
+
+    If the CSV does not exist, acquire the data
+    from Auto.dev using data_acquisition.py.
+    """
+
+    input_path = get_data_path()
+
+    try:
+
+        # Load existing CSV
+        if input_path.exists():
+
+            print("\nLoading existing raw dataset...")
+
+            df = pd.read_csv(input_path)
+
+            if df.empty:
+                print("\nRaw dataset exists but contains no records.")
+                print("Attempting to acquire fresh data...")
+
+            else:
+                print(
+                    f"Loaded {len(df):,} records from CSV."
+                )
+
+                return df
+
+
+        # CSV does not exist or empty - api call
+        print("\nRaw dataset not found.")
+        print(f"Expected file: {input_path}")
+
+        print(
+            "\nAcquiring vehicle listings from Auto.dev..."
+        )
+
+        df = get_listings()
+
+        # Check whether API returned data
+        if df.empty:
+
+            print(
+                "\nNo data was retrieved from Auto.dev."
+            )
+
+            print(
+                "Preprocessing cannot continue until "
+                "vehicle data is available."
+            )
+
+            return pd.DataFrame()
+
+        # Save acquired data
+        input_path.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        df.to_csv(
+            input_path,
+            index=False
+        )
+
+        print(
+            f"\nSaved {len(df):,} records to:"
+        )
+
+        print(input_path)
+
+        return df
+
+    except pd.errors.EmptyDataError:
+
+        print(
+            "\nThe raw dataset file is empty."
+        )
+
+        return pd.DataFrame()
+
+    except pd.errors.ParserError:
+
+        print(
+            "\nUnable to read the raw dataset."
+        )
+
+        print(
+            "The CSV file may be corrupted or incorrectly formatted."
+        )
+
+        return pd.DataFrame()
+
+    except Exception as e:
+
+        print(
+            f"\nUnexpected error loading/acquiring data: {e}"
+        )
+
+        return pd.DataFrame()
+
 
 def select_features(df):
     """Select candidate features for the ML model."""
@@ -31,14 +148,28 @@ def select_features(df):
 
     return df[available_columns].copy()
 
+
 def remove_high_missing_columns(df, threshold=0.70):
-    """Drop columns where the percentage of missing values exceeds threshold."""
+    """Drop columns where missing values exceed the threshold."""
 
     missing_percentage = df.isna().mean()
 
     columns_to_drop = missing_percentage[
         missing_percentage > threshold
     ].index
+
+    if len(columns_to_drop) > 0:
+
+        print(
+            "\nColumns removed due to high missing values:"
+        )
+
+        for column in columns_to_drop:
+
+            print(
+                f"- {column}: "
+                f"{missing_percentage[column]:.1%} missing"
+            )
 
     return df.drop(columns=columns_to_drop)
 
@@ -48,8 +179,16 @@ def clean_data(df):
 
     df = df.copy()
 
-    # Remove duplicate records
+    initial_rows = len(df)
+
     df = df.drop_duplicates()
+
+    duplicates_removed = initial_rows - len(df)
+
+    print(
+        f"\nDuplicates removed: "
+        f"{duplicates_removed:,}"
+    )
 
     return df
 
@@ -59,8 +198,13 @@ def engineer_features(df):
 
     df = df.copy()
 
-    # Vehicle age
-    df["vehicle_age"] = 2026 - df["vehicle.year"]
+    current_year = datetime.now().year
+
+    if "vehicle.year" in df.columns:
+
+        df["vehicle_age"] = (
+            current_year - df["vehicle.year"]
+        )
 
     return df
 
@@ -70,9 +214,8 @@ def encode_features(df):
 
     df = df.copy()
 
-    # Encoding will be implemented once
-    # we decide which categorical variables
-    # are going into the model.
+    # Encoding will be implemented using
+    # a scikit-learn pipeline during modelling.
 
     return df
 
@@ -82,17 +225,7 @@ def scale_features(df):
 
     df = df.copy()
 
-    # Scaling will be implemented using
-    # a scikit-learn pipeline.
-
-    return df
-
-
-def split_data(df):
-    """Split data into training and testing sets."""
-
-    # We'll implement this after defining
-    # X and y.
+    # Scaling will be implemented using a scikit-learn pipeline during modelling.
 
     return df
 
@@ -101,21 +234,47 @@ def preprocess_data(df):
     """Run the complete preprocessing pipeline."""
 
     df = select_features(df)
+
     df = remove_high_missing_columns(df)
+
     df = clean_data(df)
+
     df = engineer_features(df)
+
     df = encode_features(df)
+
     df = scale_features(df)
-    # df = split_data(df)
 
     return df
 
 
 if __name__ == "__main__":
 
-    df = get_listings()
+    # Load existing data / acquire new data
+    df = load_data()
 
-    processed_df = preprocess_data(df)
+    # Stop if no data is available
+    if df.empty:
 
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {processed_df.shape[0]:,} rows and {processed_df.shape[1]:,} columns extracted from API and processed")
-    # print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}]", processed_df.columns.tolist())
+        print(
+            "\nPreprocessing stopped because "
+            "no data is available."
+        )
+
+    else:
+
+        # Run preprocessing
+        processed_df = preprocess_data(df)
+
+        print(
+            f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+            f"{processed_df.shape[0]:,} rows and "
+            f"{processed_df.shape[1]:,} columns "
+            f"loaded and processed."
+        )
+
+        print("\nProcessed columns:")
+
+        for column in processed_df.columns:
+
+            print(f"- {column}")
