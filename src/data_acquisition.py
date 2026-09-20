@@ -1,5 +1,7 @@
 import os
 import time
+from pathlib import Path
+
 import requests
 import pandas as pd
 from dotenv import load_dotenv
@@ -15,6 +17,9 @@ def get_listings():
 
     if not api_key:
         raise ValueError("AUTO_DEV_API_KEY not found")
+
+    if not base_url:
+        raise ValueError("AUTO_DEV_BASE_URL not found")
 
     headers = {
         "Authorization": f"Bearer {api_key}"
@@ -52,23 +57,54 @@ def get_listings():
 
         data = response.json()
 
-        all_listings.extend(data.get("data", []))
+        listings = data.get("data", [])
+        all_listings.extend(listings)
 
         print(f"Retrieved {len(all_listings)} listings...")
 
+        # Get next page
         url = data.get("links", {}).get("next")
 
+        # Parameters are only needed for the first request
         params = None
 
         # Small delay between API requests
-        time.sleep(1)
+        if url:
+            time.sleep(1)
 
     return pd.json_normalize(all_listings)
 
 
 if __name__ == "__main__":
+
     df = get_listings()
+
     print(f"\nTotal listings retrieved: {len(df)}")
+
+    # Save raw API data
+    if not df.empty:
+
+        output_path = (
+            Path(__file__).resolve().parent.parent
+            / "data"
+            / "raw"
+            / "auto_dev_listings.csv"
+        )
+
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        df.to_csv(
+            output_path,
+            index=False
+        )
+
+        print(f"Raw data saved to: {output_path}")
+
+    else:
+        print("No data saved.")
 
 # old script saved
 # # src/data_acquisition.py
